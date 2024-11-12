@@ -8,8 +8,6 @@ term_procs() {
     kill -TERM "$p2_pid" 2>/dev/null
 }
 
-trap term_procs SIGTERM
-
 cat << EOF > /etc/cron.d/misp
 20 2 * * * www-data /var/www/MISP/app/Console/cake Server cacheFeed "$CRON_USER_ID" all > /tmp/cronlog 2>&1
 30 2 * * * www-data /var/www/MISP/app/Console/cake Server fetchFeed "$CRON_USER_ID" all > /tmp/cronlog 2>&1
@@ -30,15 +28,22 @@ if [[ ! -p /tmp/cronlog ]]; then
     mkfifo -m 777 /tmp/cronlog
 fi
 
-# Build another fifo for the cron pipe
-if [[ ! -p /tmp/cronpipe ]]; then
-    mkfifo /tmp/cronpipe
+if [ -n "$KUBERNETES_SERVICE_HOST" ]; then
+    tail -f /tmp/cronlog &
+    exec cron -l -f
+else
+    trap term_procs SIGTERM
+
+    # Build another fifo for the cron pipe
+    if [[ ! -p /tmp/cronpipe ]]; then
+        mkfifo /tmp/cronpipe
+    fi
+
+    # Execute the cron pipe
+    cron -l -f > /tmp/cronpipe & p1_pid=$!
+    tail -f /tmp/cronlog < /tmp/cronpipe & p2_pid=$!
+
+    # Wait for both processes of the cron pipe
+    wait "$p2_pid"
+    wait "$p1_pid"
 fi
-
-# Execute the cron pipe
-cron -l -f > /tmp/cronpipe & p1_pid=$!
-tail -f /tmp/cronlog < /tmp/cronpipe & p2_pid=$!
-
-# Wait for both processes of the cron pipe
-wait "$p2_pid"
-wait "$p1_pid"

@@ -6,8 +6,6 @@ term_proc() {
     kill -TERM "$master_pid" 2>/dev/null
 }
 
-trap term_proc SIGTERM
-
 change_php_vars() {
     ESCAPED=$(printf '%s\n' "$REDIS_PASSWORD" | sed -e 's/[\/&]/\\&/g')
     for FILE in /etc/php/*/fpm/php.ini
@@ -33,8 +31,15 @@ change_php_vars() {
 
 echo "Configure PHP | Change PHP values ..." && change_php_vars
 
-echo "Configure PHP | Starting PHP FPM"
-/usr/sbin/php-fpm8.2 -R -F & master_pid=$!
+# Initialize app, including db
+/configure_app.sh
 
-# Wait for it
-wait "$master_pid"
+echo "Configure PHP | Starting PHP FPM"
+if [ -n "$KUBERNETES_SERVICE_HOST" ]; then
+    exec /usr/sbin/php-fpm8.2 -R -F
+else
+    trap term_proc SIGTERM
+    /usr/sbin/php-fpm8.2 -R -F & master_pid=$!
+    # Wait for it
+    wait "$master_pid"
+fi
