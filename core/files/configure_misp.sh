@@ -101,13 +101,13 @@ set_up_oidc() {
             }
         }" > /dev/null
 
-        # Check if OIDC_SCOPES is set and not empty
-        if [[ -n "$OIDC_SCOPES" ]]; then
+        # Check if OIDC_SCOPES is set and is an array
+        if [[ "$(echo "$OIDC_SCOPES" | jq type -r)" == "array" ]]; then
             # Run the modify_config.php script to update OidcAuth configuration with the provided OIDC_SCOPES
             # The 'scopes' field will only be added if OIDC_SCOPES has a value
             sudo -u www-data php /var/www/MISP/tests/modify_config.php modify "{
                 \"OidcAuth\": {
-                    ${OIDC_SCOPES:+\"scopes\": \"${OIDC_SCOPES}\"}
+                    \"scopes\": ${OIDC_SCOPES}
                 }
             }" > /dev/null
         fi
@@ -279,7 +279,14 @@ init_user() {
     echo "UPDATE $MYSQL_DATABASE.users SET email = \"${ADMIN_EMAIL}\" WHERE id = 1;" | ${MYSQL_CMD}
 
     if [ ! -z "$ADMIN_ORG" ]; then
+        echo "... setting admin org to '${ADMIN_ORG}'"
         echo "UPDATE $MYSQL_DATABASE.organisations SET name = \"${ADMIN_ORG}\" where id = 1;" | ${MYSQL_CMD}
+        sudo -u www-data /var/www/MISP/app/Console/cake Admin setSetting -q "MISP.org" "${ADMIN_ORG}"
+    fi
+
+    if [ ! -z "$ADMIN_ORG_UUID" ]; then
+        echo "... setting admin org uuid to '${ADMIN_ORG_UUID}'"
+        echo "UPDATE $MYSQL_DATABASE.organisations SET uuid = \"${ADMIN_ORG_UUID}\" where id = 1;" | ${MYSQL_CMD}
     fi
 
     if [ -n "$ADMIN_KEY" ]; then
